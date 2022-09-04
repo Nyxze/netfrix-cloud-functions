@@ -1,17 +1,29 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteMovieStorage = exports.addDownloadFirestore = void 0;
+exports.deleteMovieStorage = exports.addDownloadFirestore = exports.deleteFromIndex = exports.updateIndex = exports.addToIndex = void 0;
 const functions = require("firebase-functions");
+const algoliasearch_1 = require("algoliasearch");
 const admin = require("firebase-admin");
 const BUCKET_ID = "netfrix-67d95.appspot.com";
-// // Start writing Firebase Functions
-// // https://firebase.google.com/docs/functions/typescript
-//
-// export const helloWorld = functions.https.onRequest((request, response) => {
-//   functions.logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
-admin.initializeApp();
+const APPID = process.env.ALGOLIA_APP;
+const ADMINKEY = process.env.ALGOLIA_ADMIN_KEY;
+console.log(APPID);
+console.log(ADMINKEY);
+const client = (0, algoliasearch_1.default)(APPID, ADMINKEY);
+const index = client.initIndex("Movies");
+exports.addToIndex = functions.firestore.document("Movies/{moviesID}").onCreate(snap => {
+    const data = snap.data();
+    const objectID = snap.id;
+    return index.saveObject(Object.assign(Object.assign({}, data), { objectID }));
+});
+exports.updateIndex = functions.firestore.document("Movies/{moviesID}").onUpdate(change => {
+    const newData = change.after.data();
+    const objectID = change.after.id;
+    return index.saveObject(Object.assign(Object.assign({}, newData), { objectID }));
+});
+exports.deleteFromIndex = functions.firestore.document("Movies/{moviesID}").onDelete(snap => {
+    return index.deleteObject(snap.id);
+});
 exports.addDownloadFirestore = functions.storage
     .bucket(BUCKET_ID).object().onFinalize(async (object) => {
     var _a, _b;
@@ -20,9 +32,10 @@ exports.addDownloadFirestore = functions.storage
         const data = {
             name: (_b = object.name) === null || _b === void 0 ? void 0 : _b.replace("Downloads/", ""),
             contentType: object.contentType,
-            filepath: object.name,
+            filePath: object.name,
             createdAt: object.timeCreated,
-            updatedAt: object.updated
+            updatedAt: object.updated,
+            isArchived: false
         };
         try {
             await db.collection("Downloads").doc().set(data);
